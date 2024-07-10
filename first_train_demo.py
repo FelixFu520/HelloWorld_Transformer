@@ -106,8 +106,8 @@ def run_epoch(data_iter, model, loss_compute, device=None):
     tokens = 0
     for i, batch in enumerate(data_iter):
         out = model.forward(batch.src, batch.trg, 
-                            batch.src_mask, batch.trg_mask)
-        loss = loss_compute(out, batch.trg_y, batch.ntokens)
+                            batch.src_mask, batch.trg_mask) # out: [batch_size, trg_len, d_model]
+        loss = loss_compute(out, batch.trg_y, batch.ntokens)    # batch.trg_y: [batch_size, trg_len], batch.ntokens: int
         total_loss += loss
         total_tokens += batch.ntokens
         tokens += batch.ntokens
@@ -155,9 +155,9 @@ class SimpleLossCompute:
         """
         norm: loss的归一化系数,用batch中所有有效token数即可
         """
-        x = self.generator(x)
-        x_ = x.contiguous().view(-1, x.size(-1))
-        y_ = y.contiguous().view(-1)
+        x = self.generator(x)   # x: [batch_size, trg_len, V]
+        x_ = x.contiguous().view(-1, x.size(-1))    # x_: [batch_size*trg_len, V]
+        y_ = y.contiguous().view(-1)    # y:(batch_size, trg_len), y_: [batch_size*trg_len]
         loss = self.criterion(x_, y_)
         loss /= norm
         loss.backward()
@@ -219,5 +219,5 @@ print("greedy decode")
 model.eval()
 src = Variable(torch.LongTensor([[1,2,3,4,5,6,7,8,9,10]])).cuda()
 src_mask = Variable(torch.ones(1, 1, 10)).cuda()
-pred_result = greedy_decode(model, src, src_mask, max_len=10, start_symbol=1)
+pred_result = greedy_decode(model, src, src_mask, max_len=11, start_symbol=1)
 print(pred_result[:, 1:])

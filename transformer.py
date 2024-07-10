@@ -67,13 +67,13 @@ class PositionalEncoding(nn.Module):
         # Compute the positional encodings
         # 注意下面代码的计算方式与公式中给出的是不同的,但是是等价的,你可以尝试简单推导证明一下。
         # 这样计算是为了避免中间的数值计算结果超出float的范围,
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
+        pe = torch.zeros(max_len, d_model)  # (max_len, d_model)
+        position = torch.arange(0, max_len).unsqueeze(1)    # (max_len, 1)
         div_term = torch.exp(torch.arange(0, d_model, 2) *
-                             -(math.log(10000.0) / d_model))
+                             -(math.log(10000.0) / d_model))    # (256)
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
+        pe[:, 1::2] = torch.cos(position * div_term)    
+        pe = pe.unsqueeze(0)    # (1, max_len, d_model)
         self.register_buffer('pe', pe)
         
     def forward(self, x):
@@ -136,7 +136,7 @@ class MultiHeadedAttention(nn.Module):
         if mask is not None:
             # Same mask applied to all h heads.
             # 使用unsqueeze扩展维度, 代表多头中的第n头
-            mask = mask.unsqueeze(1)
+            mask = mask.unsqueeze(1)    # mask:(batch_size, 1, 1, src_len)
         # 接着, 我们获得一个batch_size的变量, 他是query尺寸的第1个数字, 代表有多少条样本
         nbatches = query.size(0)
         
@@ -155,7 +155,7 @@ class MultiHeadedAttention(nn.Module):
         # 2) Apply attention on all the projected vectors in batch. 
         # 得到每个头的输入后, 接下来就是将他们传入到attention中, 这里直接调用我们之前实现的attention函数, 同时也将mask和dropout传入其中
         x, self.attn = attention(query, key, value, mask=mask, 
-                                 dropout=self.dropout)
+                                 dropout=self.dropout)  # x:(batch_size, self.h, src_len, d_model//self.h=self.d_k)
         
         # 3) "Concat" using a view and apply a final linear. 
         # 通过多头注意力计算后, 我们就得到了每个头计算结果组成的4维张量, 
@@ -164,7 +164,7 @@ class MultiHeadedAttention(nn.Module):
         # 这个方法的作用就是能够让转置后的张量应用view方法, 否则将无法直接使用,
         # 所以, 下一步就是使用view重塑形状, 变成和输入形状相同.
         x = x.transpose(1, 2).contiguous() \
-             .view(nbatches, -1, self.h * self.d_k)
+             .view(nbatches, -1, self.h * self.d_k) # x:(batch_size, src_len, d_model)
         # 最后使用线性层列表中的最后一个线性变换得到最终的多头注意力结构的输出
         return self.linears[-1](x)
 
@@ -307,7 +307,7 @@ class DecoderLayer(nn.Module):
         m = memory
         # 将x传入第一个子层结构,第一个子层结构的输入分别是x和self-attn函数,因为是自注意力机制,所以Q,K,V都是x,最后一个参数时目标数据掩码张量,这时要对目标数据进行遮掩,因为此时模型可能还没有生成任何目标数据。
         # 比如在解码器准备生成第一个字符或词汇时,我们其实已经传入了第一个字符以便计算损失,但是我们不希望在生成第一个字符时模型能利用这个信息,因此我们会将其遮掩,同样生成第二个字符或词汇时,模型只能使用第一个字符或词汇信息,第二个字符以及之后的信息都不允许被模型使用。
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))    # x:(batch_size, tgt_len, d_model), tgt_mask:(batch_size, tgt_len, tgt_len)
         # 接着进入第二个子层,这个子层中常规的注意力机制,q是输入x;k,v是编码层输出memory,
         # 同样也传入source_mask,但是进行源数据遮掩的原因并非是抑制信息泄露,而是遮蔽掉对结果没有意义的padding。
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
@@ -374,20 +374,20 @@ class EncoderDecoder(nn.Module):
         # 在forward函数中,有四个参数,source代表源数据,target代表目标数据,
         # source_mask和target_mask代表对应的掩码张量,在函数中,将source source_mask传入编码函数,
         # 得到结果后与source_mask target 和target_mask一同传给解码函数
-        memory = self.encode(src, src_mask)
-        res = self.decode(memory, src_mask, tgt, tgt_mask)
+        memory = self.encode(src, src_mask)     # src: (batch_size, src_len), src_mask: (batch_size, 1, src_len)
+        res = self.decode(memory, src_mask, tgt, tgt_mask)  # memory:(batch_size, src_len, d_model), src_mask:(batch_size, 1, src_len), tgt:(batch_size, tgt_len), tgt_mask:(batch_size, tgt_len, tgt_len)
         return res
     
     def encode(self, src, src_mask):
         # 编码函数,以source和source_mask为参数,使用src_embed对source做处理,然后和source_mask一起传给self.encoder
-        src_embedds = self.src_embed(src)
-        return self.encoder(src_embedds, src_mask)
+        src_embedds = self.src_embed(src)   # src_embedds:(batch_size, src_len, d_model)
+        return self.encoder(src_embedds, src_mask)  # src_mask:(batch_size, 1, src_len)
     
     def decode(self, memory, src_mask, tgt, tgt_mask):
         # 解码函数,以memory即编码器的输出,source_mask target target_mask为参数,
         # 使用tgt_embed对target做处理,然后和source_mask,target_mask,memory一起传给self.decoder
         target_embedds = self.tgt_embed(tgt)
-        return self.decoder(target_embedds, memory, src_mask, tgt_mask)
+        return self.decoder(target_embedds, memory, src_mask, tgt_mask) # target_embedds:(batch_size, tgt_len, d_model), memory:(batch_size, src_len, d_model), src_mask:(batch_size, 1, src_len), tgt_mask:(batch_size, tgt_len, tgt_len)
 
 def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
     """
@@ -423,13 +423,21 @@ def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0
 
 
 if __name__ == "__main__":
+    # 测试Embeddings类
+    print("test Embeddings")
+    input_data = np.random.uniform(0, 100, (10, 10))
+    input_data = torch.from_numpy(input_data).long()
+    embedding_layer = Embeddings(512, 100)
+    output = embedding_layer(input_data)
+    print(output.size())
 
     print("\n-----------------------")
-    print("test subsequect_mask")
-    temp_mask = subsequent_mask(4)
-    print(temp_mask)
+    # print("\n-----------------------")
+    # print("test subsequect_mask")
+    # temp_mask = subsequent_mask(4)
+    # print(temp_mask)
 
-    print("\n-----------------------")
-    print("test build model")
-    tmp_model = make_model(10, 10, 2)
-    print(tmp_model)
+    # print("\n-----------------------")
+    # print("test build model")
+    # tmp_model = make_model(10, 10, 2)
+    # print(tmp_model)
